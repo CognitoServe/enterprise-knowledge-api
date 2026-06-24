@@ -13,18 +13,18 @@ from openai import OpenAI
 
 load_dotenv(override=True)
 
-# ── App ───────────────────────────────────────────────────────────────────
+
 app = FastAPI(
     title="Enterprise Knowledge API",
     description="RAG-powered PDF knowledge base — chunk, embed, store, query with grounded LLM answers.",
     version="1.0.0",
 )
 
-# ── ChromaDB (persistent on disk) ────────────────────────────────────────
+
 chroma_client = chromadb.PersistentClient(path="./chroma_db")
 collection = chroma_client.get_or_create_collection(name="knowledge_base")
 
-# ── LLM via OpenRouter (OpenAI-compatible SDK) ───────────────────────────
+
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 llm = OpenAI(
     base_url="https://openrouter.ai/api/v1",
@@ -33,7 +33,7 @@ llm = OpenAI(
 MODEL = "openai/gpt-4o-mini"
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────
+
 
 def chunk_text(text: str, chunk_size: int = 200, overlap: int = 20) -> list[str]:
     """
@@ -67,13 +67,13 @@ def extract_pdf_text(file_bytes: bytes) -> str:
     return "\n".join(pages)
 
 
-# ── Request / response models ────────────────────────────────────────────
+
 
 class QueryRequest(BaseModel):
     question: str
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────
+
 
 @app.get("/health")
 async def health():
@@ -110,21 +110,21 @@ async def upload(file: UploadFile = File(...)):
 
     raw = await file.read()
 
-    # 1 — extract text
+
     text = extract_pdf_text(raw)
     if not text.strip():
         raise HTTPException(status_code=400, detail="Could not extract any text from the PDF.")
 
-    # 2 — chunk
+
     chunks = chunk_text(text, chunk_size=200, overlap=20)
     if not chunks:
         raise HTTPException(status_code=400, detail="PDF produced zero text chunks.")
 
-    # 3 — unique IDs per chunk (batch prefix keeps uploads distinguishable)
+
     batch_id = uuid.uuid4().hex[:8]
     ids = [f"chunk_{batch_id}_{i}" for i in range(len(chunks))]
 
-    # 4 — store in ChromaDB (default embedding function handles vectorization)
+
     collection.add(documents=chunks, ids=ids)
 
     return {"message": "PDF processed successfully", "chunks_stored": len(chunks)}
@@ -140,14 +140,14 @@ async def query(body: QueryRequest):
     if num_chunks == 0:
         raise HTTPException(status_code=400, detail="Knowledge base is empty. Upload a PDF first.")
 
-    # 1 — retrieve top 3 relevant chunks
+
     n_results = min(3, num_chunks)
     results = collection.query(query_texts=[body.question], n_results=n_results)
 
     retrieved_chunks: list[str] = results["documents"][0]
     chunk_ids: list[str] = results["ids"][0]
 
-    # 2 — build grounded prompt
+
     context_block = "\n\n".join(
         f"[{cid}]: {text}" for cid, text in zip(chunk_ids, retrieved_chunks)
     )
@@ -161,7 +161,7 @@ async def query(body: QueryRequest):
         "Provide a clear, concise answer."
     )
 
-    # 3 — call LLM via OpenRouter
+
     response = llm.chat.completions.create(
         model=MODEL,
         messages=[{"role": "user", "content": grounded_prompt}],
