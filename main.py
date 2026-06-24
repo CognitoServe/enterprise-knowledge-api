@@ -136,11 +136,13 @@ async def query(body: QueryRequest):
     Embed the question, retrieve top-3 chunks from ChromaDB,
     build a grounded prompt, call the LLM, return answer + sources.
     """
-    if collection.count() == 0:
+    num_chunks = collection.count()
+    if num_chunks == 0:
         raise HTTPException(status_code=400, detail="Knowledge base is empty. Upload a PDF first.")
 
     # 1 — retrieve top 3 relevant chunks
-    results = collection.query(query_texts=[body.question], n_results=3)
+    n_results = min(3, num_chunks)
+    results = collection.query(query_texts=[body.question], n_results=n_results)
 
     retrieved_chunks: list[str] = results["documents"][0]
     chunk_ids: list[str] = results["ids"][0]
